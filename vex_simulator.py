@@ -1,7 +1,11 @@
 import math
 import time
 
+
+# Calculate the angle from pos1 to pos2 in degrees (0° is along positive x-axis, CCW positive)
 import pygame
+
+# Calculate the angle from pos1 to pos2 in degrees (0° is along positive x-axis, CCW positive)
 
 from robot import Robot
 
@@ -12,6 +16,10 @@ BLACK = (0, 0, 0)
 
 ROBOT_SIZE = 50  # Size of the robot image
 
+# rotation directions
+CW = "CW"
+CCW = "CCW"
+
 # COMMANDS
 DRIVE = "DRIVE"
 TURN = "TURN"
@@ -20,6 +28,69 @@ REVERSE = "REVERSE"
 RIGHT = "RIGHT"
 LEFT = "LEFT"
 GOTO = "GOTO"
+SPINTO = "SPINTO"
+
+def angle_between_positions(pos1, pos2):
+    """
+    Returns the angle in degrees from pos1 to pos2 (Cartesian coordinates).
+    0° is along the positive x-axis, increasing counter-clockwise.
+    """
+    x1, y1 = pos1
+    x2, y2 = pos2
+    angle_rad = math.atan2(y2 - y1, x2 - x1)
+    angle_deg = math.degrees(angle_rad)
+    return angle_deg
+
+def smallest_angle_difference(target_angle, current_angle):
+    """
+    Returns a tuple (angle_diff, direction) where:
+    - angle_diff is the smallest difference in degrees (always positive)
+    - direction is 'CW' or 'CCW' for the shortest rotation from current_angle to target_angle
+    """
+    diff = (target_angle - current_angle) % 360
+    if diff > 180:
+        angle_diff = 360 - diff
+        direction = CW
+    else:
+        angle_diff = diff
+        direction = CCW
+    return angle_diff, direction
+
+def cartesian_cw_or_ccw(target_angle, current_angle):
+    """
+    Determine if the shortest rotation from current_angle to target_angle is clockwise or counter-clockwise.
+    Both angles are in degrees.
+    Returns 'CW' for clockwise, 'CCW' for counter-clockwise.
+    """
+    # delta_angle = (target_angle - current_angle) % 360
+    # if delta_angle == 0:
+    #     return None  # No rotation needed
+
+    # elif delta_angle < 180:
+    #     return 'CCW'  # Counter-clockwise is shorter
+    # else:
+    #     return 'CW'   # Clockwise is shorter
+    turn_cw_angle = (target_angle - current_angle -1)
+    turn_ccw_angle = (target_angle - current_angle +1)
+    if abs(turn_cw_angle) < abs(turn_ccw_angle):
+        return CCW
+    else:
+        return CW
+
+def cartesian_heading_to_gps(heading):
+    """
+    Convert Cartesian heading (0° at positive x-axis, increasing counter-clockwise)
+    to GPS heading (0° at positive y-axis, increasing clockwise).
+    """
+    # gps_heading = (robot.heading - 90.0) * -1. # % 360  # Adjust heading to GPS convention
+
+    gps_heading = (heading - 90.0) * -1.0
+    if gps_heading > 180:
+        gps_heading -= 360
+    elif gps_heading < -180:
+        gps_heading += 360
+    assert -180 <= gps_heading <= 180, "gps_heading out of range"
+    return gps_heading
 
 # Function to translate Cartesian (0,0 at center) to pygame screen coordinates
 def cartesian_to_screen(x, y):
@@ -92,6 +163,7 @@ def run_simulator(robot, cmds):
 
 
     cmd_index = 0
+    prev_cmd_index = 0
     current_pos = None
     target_pos = None
     pos_tolerance = 2  # units
@@ -99,6 +171,8 @@ def run_simulator(robot, cmds):
     # Main loop
     running = True
     while running:
+
+        screen.fill(WHITE)
 
         # manage time
         dt = clock.tick(60) / 1000.0  # Delta time in seconds
@@ -116,6 +190,10 @@ def run_simulator(robot, cmds):
         else:
             current_cmd = current_cmd_info[0]
 
+        if prev_cmd_index != cmd_index:
+            print( f"Time {elapsed_seconds}s: Starting command {cmd_index}: {current_cmd_info}")
+            prev_cmd_index = cmd_index
+
         # process current command
         if current_cmd == DRIVE:
             # get command details
@@ -124,6 +202,9 @@ def run_simulator(robot, cmds):
                 current_pos = robot.x, robot.y
                 target_pos = add_distance(current_pos, direction, distance, robot)
 
+            # draw target position
+            screen_target = cartesian_to_screen(*target_pos)
+            pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
             dir_sign = 1 if direction == FORWARD else -1
             robot.velocity = velocity * dir_sign
             robot.heading_velocity = 0
@@ -145,6 +226,9 @@ def run_simulator(robot, cmds):
                 target_pos = current_pos + (distance if direction == LEFT else -distance)
                 robot.velocity = 0
                 robot.heading_velocity = velocity if direction == LEFT else -velocity
+
+            # screen_target = cartesian_to_screen(*target_pos)
+            # pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
             # are we there yet?
             heading_diff = abs(robot.heading - target_pos)
             if heading_diff <= 2:  # degrees tolerance
@@ -161,21 +245,24 @@ def run_simulator(robot, cmds):
             # if current_pos is None:
             current_pos = (robot.x, robot.y)
             target_pos = (target_x, target_y)
-            # Calculate direction to target
-            delta_x = target_x - robot.x
-            delta_y = target_y - robot.y
-            angle_to_target = math.degrees(math.atan2(delta_y, delta_x))
-            # robot.heading = angle_to_target  # Instant turn to face target
-            robot.velocity = velocity
-            angle_diff = (angle_to_target - robot.heading + 360) % 360
-            # print( "angle_to_target=", angle_to_target, " robot.heading=", robot.heading, " angle_diff=", angle_diff)
+            # draw target position
+            screen_target = cartesian_to_screen(*target_pos)
+            pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
+            # determine how to turn
+            angle_to_target = angle_between_positions((robot.x, robot.y), target_pos)
+            angle_diff, direction = smallest_angle_difference(angle_to_target, robot.heading)
             if abs(angle_diff) < 1.0:
+                # stop turning
                 robot.heading_velocity = 0
             else:
-                if angle_diff > 0:
+                if direction == CCW:
                     robot.heading_velocity = velocity
                 else:
                     robot.heading_velocity = -velocity
+
+            # drive forward towards target
+            robot.velocity = velocity
+
             # are we there yet?
             dist_to_target = find_distance((robot.x, robot.y), target_pos)
             if dist_to_target <= pos_tolerance:
@@ -186,10 +273,43 @@ def run_simulator(robot, cmds):
                 cmd_index += 1
                 current_pos = None
                 target_pos = None
+
+        elif current_cmd == SPINTO:
+            if current_pos is None:
+                first_time = True
+            else:
+                first_time = False
+            current_cmd, target_x, target_y, velocity = current_cmd_info
+            current_pos = (robot.x, robot.y)
+            target_pos = (target_x, target_y)
+            # draw target position
+            screen_target = cartesian_to_screen(*target_pos)
+            pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
+
+            # determine how to turn
+            angle_to_target = angle_between_positions((robot.x, robot.y), target_pos)
+            robot.velocity = 0
+            angle_diff, direction = smallest_angle_difference(angle_to_target, robot.heading)
+            if first_time:
+                print(f"robot pos={current_pos} target_pos={target_pos}  ")
+                print( "angle_to_target=", angle_to_target, " robot.heading=", robot.heading, " angle_diff=", angle_diff)
+            if abs(angle_diff) < 1.0:
+                robot.heading_velocity = 0
+                # go to next command
+                cmd_index += 1
+                current_pos = None
+                target_pos = None
+            else:
+                if first_time:
+                    print(" direction=", direction)
+                if direction == CCW:
+                    robot.heading_velocity = velocity
+                else:
+                    robot.heading_velocity = -velocity
+
         # Update robot position
         robot.update_position(dt)
 
-        screen.fill(WHITE)
 
         # Draw border lines
         pygame.draw.line(screen, BLACK, (0, 0), (WIDTH, 0), 3)           # Top
@@ -212,7 +332,9 @@ def run_simulator(robot, cmds):
             draw_text(screen, cmd_info_text, 5, HEIGHT - 80, font)
 
         # Display the robot's heading
-        heading_text = f"heading: {int(robot.heading)}°"
+        # gps_heading = (robot.heading - 90.0) * -1. # % 360  # Adjust heading to GPS convention
+        gps_heading = cartesian_heading_to_gps(robot.heading)
+        heading_text = f"heading: {int(robot.heading)}, gps heading: {int(gps_heading)}°"
         draw_text(screen, heading_text, 5, HEIGHT - 55, font)
 
         # Display the robot's pygame screen position above the field pos
@@ -233,10 +355,13 @@ def main():
 
     # Create a Robot instance with image info
     # use field coordinates, not screen coordinates
+    x_start = 300
+    y_start = 300
+    heading = 0
     robot = Robot(
-        x=0, #WIDTH // 2,
-        y=0, #/HEIGHT // 2,
-        heading=0,
+        x=x_start, #WIDTH // 2,
+        y=y_start, #/HEIGHT // 2,
+        heading=heading,
         velocity=0,
         heading_velocity=0,
         image_file='square_tank.jpg',
@@ -252,6 +377,16 @@ def main():
         # (DRIVE, FORWARD, 5, 2),  # drive
     ]
 
+    cmds2 = [
+        # (SPINTO, 300, 300, 20),
+        (SPINTO, 200, 200, 20),
+        (SPINTO, 300, 200, 20),
+        (SPINTO, 200, 300, 20),
+        (SPINTO, -200, -200, 20),
+        (SPINTO, 200, -200, 20),
+        (SPINTO, -200, 200, 20),
+
+    ]
     run_simulator(robot, cmds)
 
 

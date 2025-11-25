@@ -1,4 +1,4 @@
-import math
+
 import time
 
 
@@ -8,6 +8,9 @@ import pygame
 # Calculate the angle from pos1 to pos2 in degrees (0° is along positive x-axis, CCW positive)
 
 from robot import Robot
+from utils import angle_between_positions, cartesian_cw_or_ccw, cartesian_heading_to_gps, cartesian_to_screen
+from utils import add_distance, find_distance, smallest_angle_difference
+from utils import CW, CCW
 
 # Screen dimensions
 WIDTH, HEIGHT = 800, 800
@@ -16,9 +19,7 @@ BLACK = (0, 0, 0)
 
 ROBOT_SIZE = 50  # Size of the robot image
 
-# rotation directions
-CW = "CW"
-CCW = "CCW"
+
 
 # COMMANDS
 DRIVE = "DRIVE"
@@ -30,110 +31,18 @@ LEFT = "LEFT"
 GOTO = "GOTO"
 SPINTO = "SPINTO"
 
-def angle_between_positions(pos1, pos2):
-    """
-    Returns the angle in degrees from pos1 to pos2 (Cartesian coordinates).
-    0° is along the positive x-axis, increasing counter-clockwise.
-    """
-    x1, y1 = pos1
-    x2, y2 = pos2
-    angle_rad = math.atan2(y2 - y1, x2 - x1)
-    angle_deg = math.degrees(angle_rad)
-    return angle_deg
 
-def smallest_angle_difference(target_angle, current_angle):
-    """
-    Returns a tuple (angle_diff, direction) where:
-    - angle_diff is the smallest difference in degrees (always positive)
-    - direction is 'CW' or 'CCW' for the shortest rotation from current_angle to target_angle
-    """
-    diff = (target_angle - current_angle) % 360
-    if diff > 180:
-        angle_diff = 360 - diff
-        direction = CW
-    else:
-        angle_diff = diff
-        direction = CCW
-    return angle_diff, direction
-
-def cartesian_cw_or_ccw(target_angle, current_angle):
-    """
-    Determine if the shortest rotation from current_angle to target_angle is clockwise or counter-clockwise.
-    Both angles are in degrees.
-    Returns 'CW' for clockwise, 'CCW' for counter-clockwise.
-    """
-    # delta_angle = (target_angle - current_angle) % 360
-    # if delta_angle == 0:
-    #     return None  # No rotation needed
-
-    # elif delta_angle < 180:
-    #     return 'CCW'  # Counter-clockwise is shorter
-    # else:
-    #     return 'CW'   # Clockwise is shorter
-    turn_cw_angle = (target_angle - current_angle -1)
-    turn_ccw_angle = (target_angle - current_angle +1)
-    if abs(turn_cw_angle) < abs(turn_ccw_angle):
-        return CCW
-    else:
-        return CW
-
-def cartesian_heading_to_gps(heading):
-    """
-    Convert Cartesian heading (0° at positive x-axis, increasing counter-clockwise)
-    to GPS heading (0° at positive y-axis, increasing clockwise).
-    """
-    # gps_heading = (robot.heading - 90.0) * -1. # % 360  # Adjust heading to GPS convention
-
-    gps_heading = (heading - 90.0) * -1.0
-    if gps_heading > 180:
-        gps_heading -= 360
-    elif gps_heading < -180:
-        gps_heading += 360
-    assert -180 <= gps_heading <= 180, "gps_heading out of range"
-    return gps_heading
-
-# Function to translate Cartesian (0,0 at center) to pygame screen coordinates
-def cartesian_to_screen(x, y):
-    """
-    Convert Cartesian coordinates (0,0 at center, y up) to pygame screen coordinates (0,0 at top-left, y down).
-    Returns (screen_x, screen_y)
-    """
-    screen_x = WIDTH // 2 + int(x)
-    screen_y = HEIGHT // 2 - int(y)
-    return screen_x, screen_y
-
-def cartesian_to_screen_rect(rect):
-    print( "cartesian_to_screen_rect: rect=", rect)
-    x, y = rect.center
-    x2, y2 = cartesian_to_screen(x, y)
-    rect.center = (x2, y2)
-    return rect
 
 def draw_robot(screen, robot):
     # Rotate the robot image according to heading
     rotated_img = pygame.transform.rotate(robot.robot_img, robot.heading)
     rotated_rect = rotated_img.get_rect(center=(robot.robot_rect.center))
     # Convert field (cartesian) coordinates to screen coordinates for the center
-    screen_center = cartesian_to_screen(robot.x, robot.y)
+    screen_center = cartesian_to_screen(robot.x, robot.y, WIDTH, HEIGHT)
     rotated_rect.center = screen_center
     screen.blit(rotated_img, rotated_rect)
 
-def add_distance(current_pos, direction, distance, robot):
-    x, y = current_pos
-    if direction == FORWARD:
-        new_x = x + distance * math.cos(math.radians(robot.heading))
-        new_y = y + distance * math.sin(math.radians(robot.heading))
-    elif direction == REVERSE:
-        new_x = x - distance * math.cos(math.radians(robot.heading))
-        new_y = y - distance * math.sin(math.radians(robot.heading))
-    else:
-        new_x, new_y = x, y  # No movement for unrecognized direction
-    return new_x, new_y
 
-def find_distance(pos1, pos2):
-    x1, y1 = pos1
-    x2, y2 = pos2
-    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 def draw_text(screen, text, x, y, font):
     text_surface = font.render(text, True, BLACK)
@@ -203,7 +112,7 @@ def run_simulator(robot, cmds):
                 target_pos = add_distance(current_pos, direction, distance, robot)
 
             # draw target position
-            screen_target = cartesian_to_screen(*target_pos)
+            screen_target = cartesian_to_screen(*target_pos, WIDTH, HEIGHT)
             pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
             dir_sign = 1 if direction == FORWARD else -1
             robot.velocity = velocity * dir_sign
@@ -246,7 +155,7 @@ def run_simulator(robot, cmds):
             current_pos = (robot.x, robot.y)
             target_pos = (target_x, target_y)
             # draw target position
-            screen_target = cartesian_to_screen(*target_pos)
+            screen_target = cartesian_to_screen(*target_pos, WIDTH, HEIGHT)
             pygame.draw.circle(screen, BLACK, screen_target, 10, 2)
             # determine how to turn
             angle_to_target = angle_between_positions((robot.x, robot.y), target_pos)
@@ -373,6 +282,7 @@ def main():
         (DRIVE, FORWARD, 20, 10),  # drive forward at 5 units/sec for 20 units
         (DRIVE, REVERSE, 20, 10),  # drive forward at 5 units/sec for 20 units
         (TURN, RIGHT, 90, 20),    # turn right at 90 deg/sec
+        (SPINTO, 350, 250, 20),
         (GOTO, 100, 100, 10),    # go to (100, 100) at 510units/sec
         # (DRIVE, FORWARD, 5, 2),  # drive
     ]

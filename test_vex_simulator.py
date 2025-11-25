@@ -1,9 +1,31 @@
 import unittest
-from vex_simulator import cartesian_cw_or_ccw, cartesian_heading_to_gps, cartesian_to_screen, find_distance, angle_between_positions
-from vex_simulator import CW, CCW
-from vex_simulator import smallest_angle_difference
+from utils import cartesian_cw_or_ccw, cartesian_heading_to_gps, cartesian_to_screen, find_distance, angle_between_positions
+from utils import CW, CCW
+from utils import smallest_angle_difference
+from utils import gps_heading_to_cartesian
 
 class TestVexSimulator(unittest.TestCase):
+
+    def test_gps_heading_to_cartesian(self):
+        # 0° GPS (north) -> 90° Cartesian (east)
+        self.assertAlmostEqual(gps_heading_to_cartesian(0), 90.0)
+        # 90° GPS (east) -> 0° Cartesian (x+)
+        self.assertAlmostEqual(gps_heading_to_cartesian(90), 0.0)
+        # 180° GPS (south) -> -90° Cartesian (y-)
+        self.assertAlmostEqual(gps_heading_to_cartesian(180), -90.0)
+        # -90° GPS (west) -> 180° Cartesian (x-)
+        self.assertAlmostEqual(gps_heading_to_cartesian(-90), 180.0)
+        # 135° GPS -> -45° Cartesian
+        self.assertAlmostEqual(gps_heading_to_cartesian(135), -45.0)
+        # -135° GPS -> 225°-360° = -135° Cartesian
+        self.assertAlmostEqual(gps_heading_to_cartesian(-135), -135.0)
+
+        # create identity conversions
+        # avoid 180 and -180 boundary issues
+        for angle in range(-179, 179, 1):
+            cartesian_angle = gps_heading_to_cartesian(angle)
+            gps_converted_back = cartesian_heading_to_gps(cartesian_angle)
+            self.assertAlmostEqual(angle, gps_converted_back, msg=f"Failed at angle {angle}")
 
     def test_smallest_angle_difference(self):
         # No difference
